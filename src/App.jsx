@@ -97,6 +97,20 @@ export function App() {
     );
   }
 
+  if (library.loadError) {
+    return (
+      <main className="grid min-h-dvh place-items-center bg-base-200 p-6">
+        <div role="alert" className="alert alert-error max-w-md">
+          <FileWarning aria-hidden="true" className="size-5" />
+          <span>Local storage failed: {library.loadError}</span>
+          <button type="button" className="btn btn-sm" onClick={() => window.location.reload()}>
+            Reload
+          </button>
+        </div>
+      </main>
+    );
+  }
+
   if (mode === "prompter") {
     return (
       <main className="h-dvh bg-black">
@@ -170,7 +184,9 @@ export function App() {
           />
           <ModelStatus
             engine={engine}
-            onPrepare={engine.ensureLoaded}
+            modelId={settings.modelId}
+            onModelChange={(modelId) => update({ modelId })}
+            onPrepare={() => engine.ensureLoaded(settings.modelId)}
             onStart={toggleListen}
             onStop={toggleListen}
           />
