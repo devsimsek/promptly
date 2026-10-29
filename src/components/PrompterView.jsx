@@ -260,6 +260,13 @@ export function PrompterView({
           </button>
         ) : null}
 
+        {/* Tracking state: lost position surfaces as a recoverable badge */}
+        {settings.scrollMode === "whisper" && engine.listening && tracker.misses >= 4 ? (
+          <span className="badge badge-warning badge-sm" title="Tap the word you are reading to resync">
+            Lost position - tap your word to resync
+          </span>
+        ) : null}
+
         <button type="button" className="btn btn-ghost btn-sm" onClick={onExit}>
           <CornerDownLeft aria-hidden="true" className="size-4" />
           Edit
