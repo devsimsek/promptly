@@ -9,7 +9,7 @@ import { transcriptToSpokenWords } from "../utils/normalization.js";
 env.backends.onnx.wasm.numThreads = 1;
 env.backends.onnx.wasm.proxy = false;
 
-const MODEL_ID = "onnx-community/whisper-tiny.en";
+export const DEFAULT_MODEL_ID = "onnx-community/whisper-tiny.en";
 
 let recognizer = null;
 let device = null;
@@ -30,13 +30,15 @@ function forwardProgress(callbackEvent) {
   self.postMessage(payload);
 }
 
-async function load() {
-  if (recognizer) {
-    self.postMessage({ type: "ready", device });
-    return;
-  }
+async function load(message) {
+  const modelId = typeof message.modelId === "string" ? message.modelId : DEFAULT_MODEL_ID;
+  const multilingual = !modelId.endsWith(".en");
+  // English-only models reject language/task (adr 0001); multilingual
+  // models default to English transcription.
+  const generationOptions = multilingual ? { language: "english", task: "transcribe" } : {};
+
   try {
-    recognizer = await pipeline("automatic-speech-recognition", MODEL_ID, {
+    recognizer = await pipeline("automatic-speech-recognition", modelId, {
       device: "webgpu",
       progress_callback: forwardProgress,
     });
@@ -47,7 +49,7 @@ async function load() {
       from: "webgpu",
       message: String(webgpuError?.message || webgpuError),
     });
-    recognizer = await pipeline("automatic-speech-recognition", MODEL_ID, {
+    recognizer = await pipeline("automatic-speech-recognition", modelId, {
       device: "wasm",
       progress_callback: forwardProgress,
     });
@@ -63,8 +65,6 @@ async function drain() {
   while (queue.length > 0) {
     const audio = queue.shift();
     try {
-      // tiny.en is English-only: language/task are not supported here.
-      // return_timestamps false is the default; keep it explicit.
       const output = await recognizer(audio, { return_timestamps: false });
       const words = transcriptToSpokenWords(output?.text || "");
       self.postMessage({ type: "transcription", words });
@@ -79,7 +79,7 @@ async function drain() {
 self.onmessage = async (event) => {
   const message = event.data || {};
   if (message.type === "load") {
-    await load();
+    await load(message);
   } else if (message.type === "infer") {
     queue.push(message.audio);
     if (queue.length > 2) queue.shift(); // bound the backlog; drop oldest

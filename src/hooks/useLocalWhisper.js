@@ -80,8 +80,9 @@ export function useLocalWhisper() {
     return true;
   }, []);
 
-  /** Download and initialize the model. Safe to call repeatedly. */
-  const ensureLoaded = useCallback(async () => {
+  /** Download and initialize the model. Safe to call repeatedly; a new
+   ** model id swaps the model in the worker. */
+  const ensureLoaded = useCallback(async (modelId) => {
     if (!ensureWorker()) return false;
     const state = engineStateRef.current;
     if (state === "ready" || state === "listening" || state === "processing" || state === "downloading") {
@@ -89,7 +90,7 @@ export function useLocalWhisper() {
     }
     setError(null);
     setEngineState("downloading");
-    workerRef.current.postMessage({ type: "load" });
+    workerRef.current.postMessage({ type: "load", modelId });
     return true;
   }, []);
 

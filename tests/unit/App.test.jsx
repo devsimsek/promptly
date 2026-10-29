@@ -1,5 +1,6 @@
 // Component tests: App mounts, renders edit mode, and survives storage.
 
+/* App shell behavior tests: edit mode, model selector, prompter flows. */
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { StrictMode } from "react";
 import { beforeEach, describe, expect, it } from "vitest";
@@ -22,6 +23,15 @@ describe("App shell", () => {
     await waitFor(() => expect(screen.getByLabelText("Script library")).toBeTruthy());
     expect(screen.getByLabelText("Script text")).toBeTruthy();
     expect(screen.getByText("Speech tracking")).toBeTruthy();
+  });
+
+  it("offers the model selector", async () => {
+    render(<App />);
+    const select = await screen.findByLabelText("Whisper model");
+    const options = [...select.options].map((option) => option.value);
+    expect(options).toEqual(
+      expect.arrayContaining(["onnx-community/whisper-tiny.en", "onnx-community/whisper-base"])
+    );
   });
 
   it("creates a first untitled script on fresh storage", async () => {

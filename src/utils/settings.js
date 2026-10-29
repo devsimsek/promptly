@@ -2,8 +2,13 @@
 
 const KEY = "promptly.settings";
 
+import { default as MODELS } from "../config/models.js";
+const MODEL_IDS = new Set(MODELS.map((model) => model.id));
+const DEFAULT_MODEL_ID = MODELS[0].id;
+
 export const DEFAULT_SETTINGS = {
   activeScriptId: null,
+  modelId: DEFAULT_MODEL_ID,
   fontSize: 48,
   lineHeight: 1.5,
   mirrorHorizontal: false,
@@ -42,6 +47,7 @@ export function loadSettings() {
   merged.mirrorHorizontal = Boolean(merged.mirrorHorizontal);
   merged.pureBlack = Boolean(merged.pureBlack);
   if (!SCROLL_MODES.has(merged.scrollMode)) merged.scrollMode = DEFAULT_SETTINGS.scrollMode;
+  if (!MODEL_IDS.has(merged.modelId)) merged.modelId = DEFAULT_MODEL_ID;
   merged.manualWpm = clamp(numeric(merged.manualWpm, DEFAULT_SETTINGS.manualWpm), 80, 250);
   merged.focalEyeLinePercent = clamp(
     numeric(merged.focalEyeLinePercent, DEFAULT_SETTINGS.focalEyeLinePercent),
