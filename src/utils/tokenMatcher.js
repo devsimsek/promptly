@@ -9,7 +9,9 @@ export const DEFAULT_WINDOW = 15;
 export const MIN_UNIQUE_PHRASE = 3; // words needed to trust a recovery jump
 export const MISSES_BEFORE_RECOVERY = 8;
 
-const FILLER_WORDS = new Set(["um", "uh", "er", "ah", "hmm", "erm"]);
+const FILLER_WORDS = new Set([
+  "um", "uh", "er", "ah", "hmm", "erm", "yeah", "okay", "ok",
+]);
 
 import { normalizeWord } from "./normalization.js";
 
@@ -107,7 +109,7 @@ export function matchForward(speechModel, cursor, transcriptWords, options = {})
   if (t < spoken.length) {
     const rest = spoken.slice(t);
     const limit = Math.min(pointer + window, words.length);
-    for (let s = pointer + 1; s + rest.length <= limit; s += 1) {
+    for (let s = pointer; s + rest.length <= limit; s += 1) {
       let agree = true;
       for (let j = 0; j < rest.length; j += 1) {
         if (!compareWords(words[s + j], rest[j])) {

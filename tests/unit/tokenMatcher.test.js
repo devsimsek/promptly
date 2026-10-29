@@ -1,12 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { buildSpeechModel } from "../../src/utils/textParser.js";
-import {
-  applyTranscript,
-  compareWords,
-  findRecovery,
-  matchForward,
-} from "../../src/utils/tokenMatcher.js";
-import { parseScript } from "../../src/utils/textParser.js";
+import { buildSpeechModel, parseScript } from "../../src/utils/textParser.js";
+import { applyTranscript, compareWords, findRecovery, matchForward } from "../../src/utils/tokenMatcher.js";
 
 function model(text) {
   return buildSpeechModel(parseScript(text));
@@ -67,6 +61,14 @@ describe("matchForward", () => {
     expect(result.pointer).toBe(1);
     expect(result.confirmed).toBe(0);
     expect(result.misses).toBeGreaterThan(0);
+  });
+
+  it("anchors garbage-prefixed stumbles at the pointer", () => {
+    // Whisper subtitles sometimes emit detritus before the real words.
+    const m = model("alpha beta gamma delta");
+    const result = matchForward(m, 0, ["yeah", "alpha"]);
+    expect(result.pointer).toBe(1);
+    expect(result.confirmed).toBe(0);
   });
 
   it("holds position on an empty transcript", () => {
