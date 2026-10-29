@@ -1,0 +1,41 @@
+@import "tailwindcss";
+@plugin "daisyui" {
+  themes: light --default, dark --prefersdark, night, abyss;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+/* Keep scrollbars out of the reading area */
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+/* Prompter tokens */
+.token {
+  display: inline;
+  white-space: pre-wrap;
+  transition:
+    color 0.2s,
+    opacity 0.2s;
+}
+
+.token-confirmed {
+  opacity: 0.35;
+}
+
+.token-current {
+  color: var(--color-primary);
+  background: var(--color-base-300);
+}
+
+
+/* High-contrast prompter surfaces when pureBlack is on */
+.prompter-vh {
+  height: 100vh;
+  height: 100dvh;
+}
