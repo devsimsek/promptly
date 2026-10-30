@@ -54,6 +54,13 @@ user sites: set `PUBLIC_BASE=/` (or any subpath) at build time.
 
 ## Notes
 
+- The first HTTPS visit installs a small service worker
+  (`coi-serviceworker.js`) that reloads the page once to enable WASM
+  threads; the second lookup runs faster in return. Clear the worker in
+  the browser if that reload ever bothers you.
+- Model storage view: the engine card shows per-request timing and a
+  "Clear model storage" action that frees the downloaded model files
+  without touching scripts or settings.
 - Multithreaded WASM needs cross-origin isolation, which native GitHub
   Pages cannot provide; see `docs/adr/0002`. WebGPU devices use their
   accelerated path, everything else falls back to single-thread WASM.

@@ -9,5 +9,26 @@
   <body>
     <div id="root"></div>
     <script type="module" src="/src/main.jsx"></script>
+    <script type="module">
+      // Install the COI service worker once per origin. It claims the page,
+      // reloads once (guarded), and from then on crossOriginIsolated turns
+      // true so ONNX Runtime gets WASM threads.
+      (async () => {
+        if (!("serviceWorker" in navigator) || crossOriginIsolated) return;
+        const KEY = "%BASE_URL%coi-reloaded";
+        if (sessionStorage.getItem(KEY)) return;
+        try {
+          await navigator.serviceWorker.register("%BASE_URL%coi-serviceworker.js");
+          await navigator.serviceWorker.ready;
+          const hints = await navigator.serviceWorker.getRegistrations();
+          if (hints.length && !navigator.serviceWorker.controller) {
+            sessionStorage.setItem(KEY, "1");
+            window.location.reload();
+          }
+        } catch {
+          /* isolation is a bonus, not a requirement */
+        }
+      })();
+    </script>
   </body>
 </html>

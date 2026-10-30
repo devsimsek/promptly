@@ -20,11 +20,13 @@ and `task` for English-only models. Transformers.js throws "Cannot
 specify task or language for an English-only model" for this model
 (is_multilingual false), so the parameters in the input spec contradict
 each other; the model choice wins because the on-device privacy and
-download-size budget matter most. A model selector in edit mode offers
-tiny/base in English-only and multilingual variants; multilingual
-selections pass `language: 'english'` and `task: 'transcribe'`.
-WebGPU is attempted first with WASM fallback; each request gets
-`return_timestamps: false`.
+download-size budget matter most.
+
+Amended 2026-10-30 with the hybrid engine (ADR 0003): an `auto` engine
+setting loads Whisper tiny.en with fp32 on WebGPU devices and
+Moonshine tiny on CPU; multilingual whisper keeps `language` and `task`,
+English-only and Moonshine omit them. The selector still allows any
+single model.
 
 ## Consequences
 

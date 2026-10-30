@@ -4,7 +4,11 @@ Date: 2026-10-29
 
 ## Status
 
-Accepted
+Accepted, amended 2026-10-30 (see ADR 0003): the single-thread constraint
+holds only until cross-origin isolation exists; coi-serviceworker adds it
+at runtime, and Moonshine becomes the CPU engine. Without isolation
+(insecure origins, or before that first page reload), the app still runs
+single-threaded WASM.
 
 ## Context
 
