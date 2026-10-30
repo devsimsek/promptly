@@ -1,17 +1,23 @@
-// Inference worker: owns the Whisper pipeline so the UI thread stays free.
-// Model choice and parameters live in docs/adr/0001-whisper-tiny.en-english-only.md
+// Inference worker: owns the ASR pipeline so the UI thread stays free.
+// Model choice and parameters live in the ADRs 0001-0003.
 
 import { pipeline, env } from "@huggingface/transformers";
 import { transcriptToSpokenWords } from "../utils/normalization.js";
-import { DEFAULT_MODEL_ID } from "./modelOptions.js";
+import { hasWebGPU, resolveEnginePlan, resolveThreads } from "./modelOptions.js";
 
-// GitHub Pages serves without COOP/COEP, so SharedArrayBuffer and WASM
-// threading are unavailable; keep one thread (see adr 0002).
-env.backends.onnx.wasm.numThreads = 1;
+// GitHub Pages serves without COOP/COEP headers, so this file plans for
+// the coin-serviceworker path: threads appear only when the page proves
+// crossOriginIsolated (see resolveThreads).
+env.backends.onnx.wasm.numThreads = resolveThreads(
+  typeof crossOriginIsolated !== "undefined" ? crossOriginIsolated : false,
+  typeof navigator !== "undefined" ? navigator.hardwareConcurrency : 1
+);
 env.backends.onnx.wasm.proxy = false;
+
 let recognizer = null;
 let device = null;
-let recognizerOptions = {};
+let recognizerFamily = "whisper";
+let recognizerModelId = null;
 let busy = false;
 const queue = [];
 
@@ -29,46 +35,53 @@ function forwardProgress(callbackEvent) {
   self.postMessage(payload);
 }
 
-async function load(message) {
-  const modelId = typeof message.modelId === "string" ? message.modelId : DEFAULT_MODEL_ID;
-  const multilingual = !modelId.endsWith(".en");
-  // English-only models reject language/task (adr 0001); multilingual
-  // models default to English transcription.
-  const generationOptions = multilingual ? { language: "english", task: "transcribe" } : {};
+// English-only whisper rejects language/task (adr 0001); multilingual
+// whisper and moonshine omit them here per family.
+function generationOptionsFor(family, modelId) {
+  if (family !== "whisper" || modelId.endsWith(".en")) return {};
+  return { language: "english", task: "transcribe" };
+}
 
-  try {
-    recognizer = await pipeline("automatic-speech-recognition", modelId, {
-      device: "webgpu",
-      dtype: "fp32", // safe quality; Whisper is quantization-sensitive
-      progress_callback: forwardProgress,
-    });
-    device = "webgpu";
-  } catch (webgpuError) {
-    self.postMessage({
-      type: "device-fallback",
-      from: "webgpu",
-      message: String(webgpuError?.message || webgpuError),
-    });
+/** Load one attempt; returns the recognizer and metadata or throws. */
+async function attemptLoad(attempt) {
+  return pipeline("automatic-speech-recognition", attempt.modelId, {
+    device: attempt.device,
+    ...(attempt.dtype ? { dtype: attempt.dtype } : {}),
+    progress_callback: forwardProgress,
+  });
+}
+
+async function load(message) {
+  const plan = resolveEnginePlan(message.modelId, hasWebGPU());
+  let lastError = null;
+  for (const attempt of plan.attempts) {
     try {
-      // q8 for CPU: ~40 MB instead of ~151 MB of fp32 for tiny.en.
-      recognizer = await pipeline("automatic-speech-recognition", modelId, {
-        device: "wasm",
-        dtype: "q8",
-        progress_callback: forwardProgress,
-      });
-      device = "wasm";
-    } catch (wasmError) {
-      // Never die silently: surface the exact failure to the UI.
+      recognizer = await attemptLoad(attempt);
+      device = attempt.device;
+      recognizerFamily = attempt.modelId.includes("moonshine") ? "moonshine" : "whisper";
+      recognizerModelId = attempt.modelId;
       self.postMessage({
-        type: "error",
-        message: `Model init failed on both WebGPU and WASM: ${String(wasmError?.message || wasmError)}`,
+        type: "ready",
+        device,
+        modelId: attempt.modelId,
+        family: recognizerFamily,
       });
-      self.postMessage({ type: "idle" });
       return;
+    } catch (error) {
+      lastError = error;
+      self.postMessage({
+        type: "device-fallback",
+        from: attempt.device,
+        message: String(error?.message || error),
+      });
     }
   }
-  recognizerOptions = generationOptions;
-  self.postMessage({ type: "ready", device });
+  // Every attempt failed; surface the exact reason instead of dying silently.
+  self.postMessage({
+    type: "error",
+    message: `Model init failed on every fallback: ${String(lastError?.message || lastError)}`,
+  });
+  self.postMessage({ type: "idle" });
 }
 
 async function drain() {
@@ -78,7 +91,16 @@ async function drain() {
   while (queue.length > 0) {
     const audio = queue.shift();
     try {
-      const output = await recognizer(audio, { return_timestamps: false, ...recognizerOptions });
+      const startedAt = performance.now();
+      const generationOptions = generationOptionsFor(recognizerFamily, recognizerModelId);
+      const output = await recognizer(audio, { return_timestamps: false, ...generationOptions });
+      const elapsed = performance.now() - startedAt;
+      const audioSeconds = audio.length / 16000;
+      self.postMessage({
+        type: "infer-timing",
+        ms: Math.round(elapsed),
+        audioSeconds: Math.round(audioSeconds * 100) / 100,
+      });
       const words = transcriptToSpokenWords(output?.text || "");
       self.postMessage({ type: "transcription", words });
     } catch (error) {
@@ -112,8 +134,8 @@ self.onmessage = async (event) => {
   }
 };
 
-// Bridge anything else (module-level throws, unhandled rejections) so the
-// operator sees the real cause instead of a generic crash note.
+// Bridge module-level throws and rejections so the operator sees the
+// cause; never let the engine die silently.
 self.addEventListener("unhandledrejection", (event) => {
   self.postMessage({
     type: "error",

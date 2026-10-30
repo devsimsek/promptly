@@ -25,9 +25,22 @@ describe("settings persistence", () => {
     expect(settings.focalEyeLinePercent).toBe(20);
   });
 
+  it("defaults the engine to auto", () => {
+    expect(DEFAULT_SETTINGS.modelId).toBe("auto");
+  });
+
+  it("migrates the legacy whisper-only default to the hybrid engine", () => {
+    saveSettings({ modelId: "onnx-community/whisper-tiny.en" });
+    expect(loadSettings().modelId).toBe("auto");
+  });
+
   it("falls back on invalid enums", () => {
-    saveSettings({ scrollMode: "hyperspeed", recoverySearch: "sideways" });
-    expect(loadSettings()).toMatchObject({ scrollMode: "manual", recoverySearch: "whole" });
+    saveSettings({ scrollMode: "hyperspeed", recoverySearch: "sideways", modelId: "not-a-model" });
+    expect(loadSettings()).toMatchObject({
+      scrollMode: "manual",
+      recoverySearch: "whole",
+      modelId: "auto",
+    });
   });
 
   it("survives malformed stored JSON", () => {

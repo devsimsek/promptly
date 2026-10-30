@@ -2,12 +2,15 @@
 
 const KEY = "promptly.settings";
 
-import { MODELS, DEFAULT_MODEL_ID } from "../workers/modelOptions.js";
-const MODEL_IDS = new Set(MODELS.map((model) => model.id));
+import { MODELS, storedModelIds as modelIdChoices } from "../workers/modelOptions.js";
+
+// Early builds shipped whisper-only as the hardcoded default; stored
+// selections migrate to the hybrid engine once.
+const LEGACY_MODEL_ID = "onnx-community/whisper-tiny.en";
 
 export const DEFAULT_SETTINGS = {
   activeScriptId: null,
-  modelId: DEFAULT_MODEL_ID,
+  modelId: "auto",
   fontSize: 48,
   lineHeight: 1.5,
   mirrorHorizontal: false,
@@ -46,7 +49,9 @@ export function loadSettings() {
   merged.mirrorHorizontal = Boolean(merged.mirrorHorizontal);
   merged.pureBlack = Boolean(merged.pureBlack);
   if (!SCROLL_MODES.has(merged.scrollMode)) merged.scrollMode = DEFAULT_SETTINGS.scrollMode;
-  if (!MODEL_IDS.has(merged.modelId)) merged.modelId = DEFAULT_MODEL_ID;
+  // Legacy whisper-only defaults migrate to auto once.
+  if (merged.modelId === LEGACY_MODEL_ID) merged.modelId = "auto";
+  if (!modelIdChoices.has(merged.modelId)) merged.modelId = DEFAULT_SETTINGS.modelId;
   merged.manualWpm = clamp(numeric(merged.manualWpm, DEFAULT_SETTINGS.manualWpm), 80, 250);
   merged.focalEyeLinePercent = clamp(
     numeric(merged.focalEyeLinePercent, DEFAULT_SETTINGS.focalEyeLinePercent),
