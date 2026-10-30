@@ -129,6 +129,13 @@ export function useLocalWhisper() {
     sessionRef.current.active = true;
     try {
       await ensureLoaded(modelId);
+      const micGuard =
+        navigator.mediaDevices?.getUserMedia
+          ? null
+          : new Error(
+              "This page is not a secure origin, so the microphone is locked. Use https, or in Chrome for Android open chrome://flags/#unsafely-treat-insecure-origin-as-secure, add this exact URL, then relaunch Chrome."
+            );
+      if (micGuard) throw micGuard;
       let context;
       try {
         context = new AudioContext({ sampleRate: 16000, latencyHint: "interactive" });
