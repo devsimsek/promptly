@@ -30,6 +30,9 @@ WebGPU is attempted first with WASM fallback; each request gets
 
 - English-only by default for speech tracking; the selector enables the
   multilingual variants, which default to English transcription.
+- Download weight builds are pinned per device: fp32 on WebGPU (Whisper
+  is extremely quantization-sensitive in its encoder), q8 on WASM at
+  roughly 41 MB instead of the 151 MB fp32 download.
 - Whisper pads every request to a 30 second feature window regardless of
   buffer length, so short buffers do not guarantee short inference. Real
   time behavior must be measured on physical Android hardware before
