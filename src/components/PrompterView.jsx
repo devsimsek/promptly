@@ -266,6 +266,14 @@ export function PrompterView({
             Lost position - tap your word to resync
           </span>
         ) : null}
+        {settings.scrollMode === "whisper" && engine.listening && engine.metrics?.realTimeRatio != null && engine.metrics.realTimeRatio < 1 ? (
+          <span
+            className="badge badge-warning badge-sm"
+            title={`Last inference took ${engine.metrics.lastMs} ms`}
+          >
+            {engine.metrics.realTimeRatio}x lag
+          </span>
+        ) : null}
 
         <button type="button" className="btn btn-ghost btn-sm" onClick={onExit}>
           <CornerDownLeft aria-hidden="true" className="size-4" />

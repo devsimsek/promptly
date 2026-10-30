@@ -30,8 +30,16 @@ describe("App shell", () => {
     const select = await screen.findByLabelText("Whisper model");
     const options = [...select.options].map((option) => option.value);
     expect(options).toEqual(
-      expect.arrayContaining(["onnx-community/whisper-tiny.en", "onnx-community/whisper-base"])
+      expect.arrayContaining(["auto", "onnx-community/whisper-tiny.en", "onnx-community/moonshine-tiny-ONNX"])
     );
+  });
+
+  it("clears model storage from the engine card", async () => {
+    // jsdom lacking Cache API is an expected branch: the note explains it.
+    render(<App />);
+    const button = await screen.findByRole("button", { name: /clear model storage/i });
+    fireEvent.click(button);
+    await screen.findByText(/cache api unavailable/i);
   });
 
   it("creates a first untitled script on fresh storage", async () => {

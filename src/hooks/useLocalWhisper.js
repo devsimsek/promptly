@@ -4,6 +4,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Resampler } from "../audio/resampler.js";
+import { clearModelCaches } from "../utils/modelCache.js";
 
 const ENGINE_STATES = ["unloaded", "downloading", "ready", "listening", "processing", "error"];
 
@@ -16,11 +17,13 @@ export function useLocalWhisper() {
   const [progress, setProgress] = useState(null); // { percent, loaded, total } | null
   const [device, setDevice] = useState(null); // "webgpu" | "wasm"
   const [deviceFallbackMessage, setDeviceFallbackMessage] = useState(null);
+  const [metrics, setMetrics] = useState({ lastMs: 0, avgMs: 0, realTimeRatio: null, calls: 0 });
   const [error, setError] = useState(null);
   const [listening, setListening] = useState(false);
   const engineStateRef = useRef(engineState);
   engineStateRef.current = engineState;
   const listeningRef = useRef(false);
+  const timingSamplesRef = useRef([]);
 
   const workerRef = useRef(null);
   const audioRef = useRef(null);
@@ -65,12 +68,22 @@ export function useLocalWhisper() {
         setEngineState("processing");
       } else if (message.type === "idle") {
         setEngineState(sessionRef.current.active ? "listening" : "ready");
+      } else if (message.type === "infer-timing") {
+        timingSamplesRef.current = [...timingSamplesRef.current, message].slice(-10);
+        const samples = timingSamplesRef.current;
+        const avgMs = Math.round(samples.reduce((sum, s) => sum + s.ms, 0) / samples.length);
+        const last = samples[samples.length - 1];
+        const processedMs = last.ms;
+        const realTimeRatio = processedMs > 0 ? Math.round(((last.audioSeconds * 1000) / processedMs) * 100) / 100 : null;
+        setMetrics({ lastMs: last.ms, avgMs, realTimeRatio, calls: samples.length });
       } else if (message.type === "transcription") {
         if (!sessionRef.current.active) return; // stale session, ignore
         transcriptionListeners.current.forEach((listener) => listener(message.words));
       } else if (message.type === "device-fallback") {
-        // Designed behavior, not a failure: no usable WebGPU adapter here.
-        setDeviceFallbackMessage(`This device lacks WebGPU inference; using CPU (WASM). May run slower.`);
+        // Designed behavior, not a failure: show the real reason.
+        setDeviceFallbackMessage(
+          `${message.from} unavailable: ${message.message || "no usable adapter"}; trying next engine`
+        );
       } else if (message.type === "error") {
         setError(message.message);
         if (!sessionRef.current.active) setEngineState("error");
@@ -210,6 +223,12 @@ export function useLocalWhisper() {
     await stopListeningInternal();
   }, [stopListeningInternal]);
 
+  /** Free every downloaded model cache; call before Prepare to redownload. */
+  const clearModelCache = useCallback(async () => {
+    const cleared = await clearModelCaches();
+    return cleared;
+  }, []);
+
   const resetError = useCallback(() => {
     setError(null);
     setEngineState(sessionRef.current.active ? "listening" : engineStateRef.current);
@@ -231,11 +250,13 @@ export function useLocalWhisper() {
     progress,
     device,
     deviceFallbackMessage,
+    metrics,
     error,
     listening,
     ensureLoaded,
     startListening,
     stopListening,
+    clearModelCache,
     resetError,
     subscribe,
     ENGINE_STATES,

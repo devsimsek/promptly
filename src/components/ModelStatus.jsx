@@ -1,12 +1,19 @@
 // Model and mic status card for edit mode.
 
-import { CircleStop, Download, Mic, Play, TriangleAlert } from "lucide-react";
+import { CircleStop, Download, Mic, Play, Trash2, TriangleAlert } from "lucide-react";
+import { useState } from "react";
 import { MODELS } from "../config/models.js";
 
 export function ModelStatus({ engine, modelId, onModelChange, onPrepare, onStart, onStop }) {
   const state = engine.engineState;
   const canStart = state === "ready" || state === "processing";
   const percent = engine.progress?.percent;
+  const [cacheNote, setCacheNote] = useState(null);
+
+  async function onClearCache() {
+    const cleared = await engine.clearModelCache();
+    setCacheNote(cleared === null ? "Cache API unavailable on insecure origins." : `Cleared ${cleared} model storage areas.`);
+  }
 
   return (
     <section aria-label="Speech engine status" className="card border-base-300 border bg-base-100">
@@ -20,10 +27,38 @@ export function ModelStatus({ engine, modelId, onModelChange, onPrepare, onStart
           </div>
         ) : null}
 
-        {engine.deviceFallbackMessage ? (
+        {engine.deviceFallbackMessage && !engine.error ? (
           <div role="status" className="alert alert-warning">
             <span className="text-sm">{engine.deviceFallbackMessage}</span>
           </div>
+        ) : null}
+
+        {cacheNote ? (
+          <div role="status" className="alert alert-info">
+            <span className="text-sm">{cacheNote}</span>
+          </div>
+        ) : null}
+
+        {engine.metrics.calls > 0 ? (
+          <dl className="grid grid-cols-3 gap-2 p-2 text-center text-xs" aria-label="Inference metrics">
+            <div>
+              <dt className="opacity-70">Last call</dt>
+              <dd className="tabular-nums font-semibold" data-testid="last-inference">{engine.metrics.lastMs} ms</dd>
+            </div>
+            <div>
+              <dt className="opacity-70">Average (10)</dt>
+              <dd className="tabular-nums font-semibold" data-testid="avg-inference">{engine.metrics.avgMs} ms</dd>
+            </div>
+            <div>
+              <dt className="opacity-70">Real time</dt>
+              <dd
+                className={`tabular-nums font-semibold ${engine.metrics.realTimeRatio < 1 ? "text-warning" : "text-success"}`}
+                data-testid="real-time-ratio"
+              >
+                {engine.metrics.realTimeRatio === null ? "-" : `${engine.metrics.realTimeRatio}x`}
+              </dd>
+            </div>
+          </dl>
         ) : null}
 
         <div className="flex items-center gap-2 text-sm">
@@ -91,6 +126,17 @@ export function ModelStatus({ engine, modelId, onModelChange, onPrepare, onStart
             </button>
           ) : null}
         </div>
+
+        <button
+          type="button"
+          className="btn btn-ghost btn-xs"
+          onClick={onClearCache}
+          disabled={engine.listening}
+          title="Frees storage used by downloaded model files"
+        >
+          <Trash2 aria-hidden="true" className="size-3" />
+          Clear model storage
+        </button>
 
         <p className="text-xs opacity-70">
           Model and audio stay on this device. First run downloads over the network, then the browser cache keeps it.
