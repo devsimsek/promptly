@@ -3,6 +3,7 @@
 //   unloaded | downloading | ready | listening | processing | error
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { Resampler } from "../audio/resampler.js";
 
 const ENGINE_STATES = ["unloaded", "downloading", "ready", "listening", "processing", "error"];
 
@@ -14,6 +15,7 @@ export function useLocalWhisper() {
   const [engineState, setEngineState] = useState("unloaded");
   const [progress, setProgress] = useState(null); // { percent, loaded, total } | null
   const [device, setDevice] = useState(null); // "webgpu" | "wasm"
+  const [deviceFallbackMessage, setDeviceFallbackMessage] = useState(null);
   const [error, setError] = useState(null);
   const [listening, setListening] = useState(false);
   const engineStateRef = useRef(engineState);
@@ -67,7 +69,8 @@ export function useLocalWhisper() {
         if (!sessionRef.current.active) return; // stale session, ignore
         transcriptionListeners.current.forEach((listener) => listener(message.words));
       } else if (message.type === "device-fallback") {
-        setError(`WebGPU unavailable, falling back to WASM: ${message.message}`);
+        // Designed behavior, not a failure: no usable WebGPU adapter here.
+        setDeviceFallbackMessage(`This device lacks WebGPU inference; using CPU (WASM). May run slower.`);
       } else if (message.type === "error") {
         setError(message.message);
         if (!sessionRef.current.active) setEngineState("error");
@@ -115,23 +118,23 @@ export function useLocalWhisper() {
     setEngineState("ready");
   }, []);
 
-  const startListening = useCallback(async () => {
+  const startListening = useCallback(async (modelId) => {
     if (listeningRef.current) return false;
     if (typeof AudioContext === "undefined") {
       setError("Web Audio is unavailable in this browser context.");
       return false;
     }
     setError(null);
+    setDeviceFallbackMessage(null);
     sessionRef.current.active = true;
     try {
-      await ensureLoaded();
+      await ensureLoaded(modelId);
       let context;
       try {
         context = new AudioContext({ sampleRate: 16000, latencyHint: "interactive" });
       } catch {
-        context = new AudioContext(); // worklet still resamples to 16 kHz
+        context = new AudioContext(); // capture path still resamples to 16 kHz
       }
-      await context.audioWorklet.addModule(audioWorkletUrl());
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: {
           channelCount: 1,
@@ -140,13 +143,37 @@ export function useLocalWhisper() {
           autoGainControl: true,
         },
       });
-      const node = new AudioWorkletNode(context, "resampler", { numberOfOutputs: 0 });
-      node.port.onmessage = (event) => {
-        const audio = event.data?.audio;
-        if (!audio) return;
+      context.createMediaStreamSource(stream);
+
+      const deliver = (audio) => {
         workerRef.current?.postMessage({ type: "infer", audio }, [audio.buffer]);
       };
-      context.createMediaStreamSource(stream).connect(node);
+
+      if (context.audioWorklet) {
+        await context.audioWorklet.addModule(audioWorkletUrl());
+        const node = new AudioWorkletNode(context, "resampler", { numberOfOutputs: 0 });
+        node.port.onmessage = (event) => {
+          const audio = event.data?.audio;
+          if (!audio) return;
+          deliver(audio);
+        };
+        context.createMediaStreamSource(stream).connect(node);
+      } else {
+        // No AudioWorklet on this browser: ScriptProcessor with the same
+        // resampling math, silent through a zero-gain node.
+        const resampler = new Resampler(context.sampleRate);
+        const sink = context.createGain();
+        sink.gain.value = 0;
+        const node = context.createScriptProcessor(4096, 1, 1);
+        node.onaudioprocess = (event) => {
+          const resampled = resampler.push(event.inputBuffer.getChannelData(0));
+          if (!resampled) return;
+          deliver(resampled);
+        };
+        context.createMediaStreamSource(stream).connect(node);
+        node.connect(sink);
+        sink.connect(context.destination);
+      }
       audioRef.current = context;
       streamRef.current = stream;
       listeningRef.current = true;
@@ -196,6 +223,7 @@ export function useLocalWhisper() {
     engineState,
     progress,
     device,
+    deviceFallbackMessage,
     error,
     listening,
     ensureLoaded,

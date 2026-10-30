@@ -2,6 +2,8 @@
 // to 16 kHz Float32, and emits rolling ~2 s buffers (~1 s hop overlapped).
 // Registered from the main thread via
 //   audioContext.audioWorklet.addModule(`${import.meta.env.BASE_URL}worklets/resampler-processor.js`)
+// Mirrors src/audio/resampler.js; browsers without AudioWorklet use the
+// ScriptProcessorNode fallback with the class instead.
 
 const TARGET_RATE = 16000;
 const WINDOW_SAMPLES = 32000; // 2 s at 16 kHz
@@ -11,27 +13,41 @@ class ResamplerProcessor extends AudioWorkletProcessor {
   constructor(options) {
     super();
     this.inputRate = sampleRate; // global provided by the worklet context
-    this.targetRate = TARGET_RATE;
+    this.cursor = 0; // absolute source position (float)
+    this.bufferStart = 0;
+    this.carry = 0;
     this.ring = new Float32Array(this.inputRate * 3); // ~3 s, resampled 16k
     this.ringLength = 0;
     this.emittedSinceWindowStart = 0;
-    this.carrySample = 0;
-    this.carryPhase = 0;
   }
 
-  appendResampled(input) {
-    const ratio = this.inputRate / this.targetRate;
-    const outLength = Math.floor((input.length * TARGET_RATE) / this.inputRate);
-    const out = new Float32Array(outLength);
-    for (let i = 0; i < outLength; i += 1) {
-      const srcAt = i * ratio + this.carryPhase;
-      const srcWhole = Math.floor(srcAt);
-      const frac = srcAt - srcWhole;
-      const s0 = srcWhole >= 0 ? (srcWhole < input.length ? input[srcWhole] : 0) : this.carrySample;
-      const s1 = srcWhole + 1 < input.length ? input[srcWhole + 1] : s0;
-      out[i] = s0 + (s1 - s0) * frac;
+  appendResampled(mono) {
+    if (!mono || mono.length === 0) return null;
+    const ratio = this.inputRate / TARGET_RATE;
+    const end = this.bufferStart + mono.length;
+    const count = Math.max(0, Math.ceil((end - this.cursor) / ratio));
+    const out = new Float32Array(count);
+    for (let k = 0; k < count; k += 1) {
+      const pos = this.cursor + k * ratio;
+      const local = pos - this.bufferStart;
+      let s0;
+      let s1;
+      let frac;
+      if (local < 0) {
+        s0 = this.carry;
+        s1 = mono[0];
+        frac = Math.min(1, Math.max(0, 1 + local));
+      } else {
+        const i0 = Math.min(Math.floor(local), mono.length - 1);
+        frac = Math.min(1, Math.max(0, local - i0));
+        s0 = mono[i0];
+        s1 = i0 + 1 < mono.length ? mono[i0 + 1] : s0;
+      }
+      out[k] = s0 + (s1 - s0) * frac;
     }
-    this.carrySample = input.length ? input[input.length - 1] : this.carrySample;
+    this.cursor = this.cursor + count * ratio;
+    this.bufferStart = end;
+    this.carry = mono[mono.length - 1];
     return out;
   }
 
@@ -39,10 +55,9 @@ class ResamplerProcessor extends AudioWorkletProcessor {
     const input = inputs[0];
     if (!input || input.length === 0) return true;
     const channels = input.length;
-    let mono;
+    let mono = null;
     if (channels === 1) {
       mono = input[0];
-      if (!mono) return true;
     } else {
       mono = new Float32Array(input[0]?.length || 0);
       for (let c = 0; c < channels; c += 1) {
@@ -53,16 +68,19 @@ class ResamplerProcessor extends AudioWorkletProcessor {
     }
 
     const resampled = this.appendResampled(mono);
-    const capacity = this.ring.length;
-    if (this.ringLength + resampled.length > capacity) {
-      // drop the front, keep the tail (presenter paused too long)
-      const keep = this.ring.subarray(this.ringLength - (capacity - resampled.length), this.ringLength);
-      this.ring.set(keep, 0);
-      this.ringLength = keep.length;
+    if (resampled && resampled.length) {
+      const capacity = this.ring.length;
+      const overflow = this.ringLength + resampled.length - capacity;
+      if (overflow > 0) {
+        // drop the front, keep the tail (presenter paused too long)
+        const keep = this.ring.subarray(overflow, this.ringLength);
+        this.ring.set(keep, 0);
+        this.ringLength = keep.length;
+      }
+      this.ring.set(resampled, this.ringLength);
+      this.ringLength += resampled.length;
+      this.emittedSinceWindowStart += resampled.length;
     }
-    this.ring.set(resampled, this.ringLength);
-    this.ringLength += resampled.length;
-    this.emittedSinceWindowStart += resampled.length;
 
     if (this.ringLength >= WINDOW_SAMPLES && this.emittedSinceWindowStart >= HOP_SAMPLES) {
       const out = this.ring.slice(this.ringLength - WINDOW_SAMPLES, this.ringLength);
