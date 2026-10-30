@@ -55,7 +55,7 @@ export function App() {
       await engine.stopListening();
       return;
     }
-    const started = await engine.startListening();
+    const started = await engine.startListening(settings.modelId);
     if (started) setMode("prompter");
   }
 

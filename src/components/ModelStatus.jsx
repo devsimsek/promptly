@@ -1,7 +1,7 @@
 // Model and mic status card for edit mode.
 
 import { CircleStop, Download, Mic, Play, TriangleAlert } from "lucide-react";
-import MODELS from "../config/models.js";
+import { MODELS } from "../config/models.js";
 
 export function ModelStatus({ engine, modelId, onModelChange, onPrepare, onStart, onStop }) {
   const state = engine.engineState;
@@ -17,6 +17,12 @@ export function ModelStatus({ engine, modelId, onModelChange, onPrepare, onStart
           <div role="alert" className="alert alert-error">
             <TriangleAlert aria-hidden="true" className="size-4" />
             <span className="text-sm">{engine.error}</span>
+          </div>
+        ) : null}
+
+        {engine.deviceFallbackMessage ? (
+          <div role="status" className="alert alert-warning">
+            <span className="text-sm">{engine.deviceFallbackMessage}</span>
           </div>
         ) : null}
 
